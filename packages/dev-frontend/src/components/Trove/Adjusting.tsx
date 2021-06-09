@@ -7,8 +7,8 @@ import {
   LUSD_LIQUIDATION_RESERVE,
   Percent,
   Difference
-} from "@liquity/lib-base";
-import { useLiquitySelector } from "@liquity/lib-react";
+} from "../../../../lib-base";
+import { useLiquitySelector } from "../../../../lib-react";
 import { ActionDescription } from "../ActionDescription";
 import { useMyTransactionState } from "../Transaction";
 import { TroveAction } from "./TroveAction";

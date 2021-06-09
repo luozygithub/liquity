@@ -41,7 +41,7 @@ module.exports = async () => {
 
   const contracts = {
     borrowerOperations,
-    priceFeed,
+    priceFeedTestnet: priceFeed,
     lusdToken,
     sortedTroves,
     troveManager,

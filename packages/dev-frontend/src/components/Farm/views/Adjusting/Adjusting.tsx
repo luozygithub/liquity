@@ -1,7 +1,7 @@
 import React, { useCallback, useState } from "react";
 import { Heading, Box, Flex, Card, Button } from "theme-ui";
-import { Decimal, Difference, LiquityStoreState } from "@liquity/lib-base";
-import { useLiquitySelector } from "@liquity/lib-react";
+import { Decimal, Difference, LiquityStoreState } from "../../../../../../lib-base";
+import { useLiquitySelector } from "../../../../../../lib-react";
 
 import { LP, GT } from "../../../../strings";
 import { Icon } from "../../../Icon";

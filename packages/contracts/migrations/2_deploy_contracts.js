@@ -16,14 +16,27 @@ const getAddresses = deploymentHelpers.getAddresses
 const connectContracts = deploymentHelpers.connectContracts
 
 module.exports = function(deployer) {
-  deployer.deploy(BorrowerOperations)
+  deployer.deploy(BorrowerOperations).then((borrowerOperations)=>{
+    deployer.deploy(TroveManager).then((troveManager)=>{
+      deployer.deploy(StabilityPool).then((stabilityPool)=>{
+        console.log("troveManager");
+        console.log(  troveManager.address);
+        console.log("stabilityPool");
+        console.log( stabilityPool.address);
+        console.log( "borrowerOperations");
+        console.log(borrowerOperations.address);
+        deployer.deploy(LUSDToken,troveManager.address,
+          stabilityPool.address,
+          borrowerOperations.address)
+
+      })
+
+    })
+  })
   deployer.deploy(PriceFeed)
   deployer.deploy(SortedTroves)
-  deployer.deploy(TroveManager)
   deployer.deploy(ActivePool)
-  deployer.deploy(StabilityPool)
   deployer.deploy(DefaultPool)
-  deployer.deploy(LUSDToken)
   deployer.deploy(FunctionCaller)
 
   deployer.then(async () => {
@@ -34,12 +47,20 @@ module.exports = function(deployer) {
     const activePool = await ActivePool.deployed()
     const stabilityPool = await StabilityPool.deployed()
     const defaultPool = await DefaultPool.deployed()
-    const lusdToken = await LUSDToken.deployed()
+    console.log("troveManager");
+    console.log(  troveManager.address)
+    console.log( stabilityPool.address);
+    console.log(    borrowerOperations.address);
+    const lusdToken = await LUSDToken.new(
+      troveManager.address,
+      stabilityPool.address,
+      borrowerOperations.address
+    )
     const functionCaller = await FunctionCaller.deployed()
-
+    console.log("functionCaller is deployed");
     const liquityContracts = {
       borrowerOperations,
-      priceFeed,
+      priceFeedTestnet:priceFeed,
       lusdToken,
       sortedTroves,
       troveManager,
@@ -56,6 +77,7 @@ module.exports = function(deployer) {
     console.log('\n')
 
     // Connect contracts to each other
+    console.log("    // Connect contracts to each other");
     await connectContracts(liquityContracts, liquityAddresses)
   })
 }

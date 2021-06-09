@@ -7,9 +7,9 @@ import {
   StabilityDeposit,
   LiquityStoreState,
   Difference
-} from "@liquity/lib-base";
+} from "../../../../lib-base";
 
-import { useLiquitySelector } from "@liquity/lib-react";
+import { useLiquitySelector } from "../../../../lib-react";
 
 import { COIN, GT } from "../../strings";
 

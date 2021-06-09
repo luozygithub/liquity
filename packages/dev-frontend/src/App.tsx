@@ -9,7 +9,6 @@ import { TransactionProvider } from "./components/Transaction";
 import { Icon } from "./components/Icon";
 import { getConfig } from "./config";
 import theme from "./theme";
-
 import { DisposableWalletProvider } from "./testUtils/DisposableWalletProvider";
 import { LiquityFrontend } from "./LiquityFrontend";
 
