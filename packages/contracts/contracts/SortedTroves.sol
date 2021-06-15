@@ -43,6 +43,39 @@ import "./Dependencies/console.sol";
 *
 * - Public functions with parameters have been made internal to save gas, and given an external wrapper function for external access
 */
+/*
+*一个有序的双链表，节点按降序排序。
+*
+*节点映射到系统中的活动宝库- ID属性是宝库所有者的地址。
+*节点按其当前名义个人抵押比率(NICR)排序，
+*类似于ICR，但没有价格，即，只有抵押/债务。
+*
+列表可选择接受插入位置提示。
+*
+* nicr是在运行时动态计算的，而不是存储在节点上。这是因为活跃宝库的nicr
+*当清算事件发生时动态更改。
+*
+*该列表依赖于清算事件保持排序的事实:清算减少了所有活跃的Troves的nicr，
+*但维持他们的秩序。基于当前NICR插入的节点将保持正确的位置，
+与同行相比，随着回报的积累，只要原始抵押和债务没有改变。
+*因此，节点仍然按当前的NICR排序。
+*
+*节点只需要在Trove操作时重新插入——当所有者添加或删除抵押品或债务时
+*到他们的位置。
+＊
+*该列表是对以下SortedDoublyLinkedList审计的修改:
+* https://github.com/livepeer/protocol/blob/master/contracts/libraries/SortedDoublyLL.sol
+＊
+＊
+*流动性实施方面的更改:
+＊
+* -密钥已从节点中移除
+＊
+* -排序检查插入是通过比较一个NICR参数与当前的NICR，在运行时计算。
+*该列表依赖于ICR的订单作为ETH进行维护的属性:美元价格是不同的。
+＊
+* -将带有参数的公共函数设为内部，以节省天然气，并给予外部封装函数供外部访问
+*/
 contract SortedTroves is Ownable, CheckContract, ISortedTroves {
     using SafeMath for uint256;
 

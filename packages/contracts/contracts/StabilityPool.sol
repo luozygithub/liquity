@@ -69,9 +69,9 @@ import "./Dependencies/console.sol";
  * So, to track P accurately, we use a scale factor: if a liquidation would cause P to decrease to <1e-9 (and be rounded to 0 by Solidity),
  * we first multiply P by 1e9, and increment a currentScale factor by 1.
  *
- * The added benefit of using 1e9 for the scale factor (rather than 1e18) is that it ensures negligible precision loss close to the 
- * scale boundary: when P is at its minimum value of 1e9, the relative precision loss in P due to floor division is only on the 
- * order of 1e-9. 
+ * The added benefit of using 1e9 for the scale factor (rather than 1e18) is that it ensures negligible precision loss close to the
+ * scale boundary: when P is at its minimum value of 1e9, the relative precision loss in P due to floor division is only on the
+ * order of 1e-9.
  *
  * --- EPOCHS ---
  *
@@ -145,6 +145,122 @@ import "./Dependencies/console.sol";
  * The product P (and snapshot P_t) is re-used, as the ratio P/P_t tracks a deposit's depletion due to liquidations.
  *
  */
+/*
+*稳定池持有稳定池储户存入的LUSD代币。
+*
+*当一个宝藏被清算，然后根据系统条件，它的一些LUSD债务被抵消
+*稳定池中的LUSD:即抵消的债务蒸发，稳定池中等量的LUSD代币被烧毁。
+*
+*因此，清算导致每个储户收到一个LUSD损失，在他们的存款作为总存款份额的比例。
+*他们也会获得ETH收益，因为被清算的宝藏的ETH抵押品被分配给了稳定储户，
+以相同的比例。
+*
+*当清算发生时，它以相同的比例消耗每笔存款:例如，清算消耗40%
+*稳定池中总LUSD的40%消耗每个存款。
+*
+*经过一系列清算的存款称为“复合存款”:每次清算都会耗尽存款，
+*乘以范围内的某个因子]0,1[
+*
+*
+*——实施——
+*
+*我们使用高度可扩展的方法来跟踪存款和ETH收益，其复杂性为O(1)。
+*
+*当清算发生时，我们不会更新每个储户的存款和ETH收益，而是简单地更新两个状态变量:
+乘以乘积P和和S。
+*
+*通过数学操作，我们可以提取出初始存款，并准确跟踪所有储户的复合存款
+*和累积的ETH收益，随着清算发生，只使用这两个变量P和s
+*稳定性池，它们分别得到最新的P和S的快照:P_t和S_t。
+*
+*储户的ETH累计收益公式如下:
+* https://github.com/liquity/dev/blob/main/packages/contracts/mathProofs/Scalable%20Compounding%20Stability%20Pool%20Deposits.pdf
+*
+*对于给定的存款d_t，比率P/P_t告诉我们存款自从加入稳定池以来减少的因素，
+*和术语d_t * (S - S_t)/P_t给我们存款的总积累ETH收益。
+*
+*每次清算更新产品P和sum s。在一系列清算后，复合存款和相应的ETH收益
+*可使用初始存款、存款人的P和S快照，以及最新的P和S值计算。
+*
+*任何时候储户更新他们的存款(提款，充值)，他们积累的ETH收益被支付，他们的新存款被记录
+*(基于他们最新的复合存款，并通过取款/充值修改)，他们会收到最新的P和S的新快照。
+本质上，他们做了一个新的存款覆盖旧的。
+*
+*
+*——比例系数——
+*
+*因为P是在]0,1]范围内的一个不断递减的乘积，当乘以]0,1[范围内的一个数字时，它永远不应该达到0。
+*不幸的是，solid floor division总是达到0，早晚。
+*
+*一系列几乎清空池子的清算(因此每个P乘以一个非常小的数字，范围是]0,1[)可能会推动P
+*到它的18位小数限制，并四舍五入到0，当实际上池还没有被清空时:这将中断存款跟踪。
+*
+*因此，为了准确地跟踪P，我们使用一个比例因子:如果清算会导致P减少到&lt;1e-9(并通过稳固度四舍五入到0)，
+*我们首先乘以P 1e9，并增加一个currentScale因子1。
+*
+*使用1e9的比例因子(而不是1e18)的附加好处是，它确保可忽略的精度损失接近
+*尺度边界:当P在其最小值1e9时，P由于楼层划分造成的相对精度损失仅在
+*订单1e-9。
+*
+*——时代——
+*
+*当清算完全清空稳定池时，所有存款应变为0。但是，设P为0会使P为0
+*永远，并打破所有未来的奖励计算。
+*
+*所以，每次稳定池被清算清空，我们重置P = 1和currentScale = 0，并增加currentEpoch 1。
+*
+*跟踪沉积物的规模变化和时代
+*
+*当一个存款，它得到快照的currentEpoch和currentScale。
+*
+*计算复合存款时，我们将当前纪元与存款的纪元快照进行比较。如果当前时代较新，
+*然后存款出现在池清空清算期间，并必然已经耗尽到0。
+*
+*否则，我们将当前比例尺与存款的比例尺快照进行比较。如果它们相等，复合存款由d_t * P/P_t给出。
+*如果它跨越一个尺度变化，它由d_t * P/(P_t * 1e9)给出。如果它跨越了一个以上的规模变化，我们定义复合存款
+*为0，因为它现在小于其初始价值的1 / 9(例如，10亿卢布的存款已经耗尽到&lt;1 LUSD)。
+＊
+*第二个刻度将是满的，因为起点在前一个刻度，因此不需要减去任何东西。
+因此，从第二级比例表开始时就有奖金。
+ *
+ *        S_i-S_t + S_{i+1}
+ *      .<--------.------------>
+ *      .         .
+ *      . S_i     .   S_{i+1}
+ *   <--.-------->.<----------->
+ *   S_t.         .
+ *   <->.         .
+ *      t         .
+ *  |---+---------|-------------|-----...
+ *         i            i+1
+ *
+* (e_1 + e_2)的和捕获储户的总积累ETH收益，处理的情况下，他们
+*存款跨越一个规模变化。我们只关心一个尺度变化的收益，因为复合
+*存款被定义为0，一旦它跨越了一个以上的规模变化。
+*
+*
+*——当清算发生时更新p——
+*
+*请参阅证明文件中的实现规范，它紧跟着复合存款/ ETH增益推导:
+* https://github.com/liquity/liquity/blob/master/papers/Scalable_Reward_Distribution_with_Compounding_Stakes.pdf
+*
+*
+*——向稳定存款人大量发行债券——
+*
+*每次存款操作和清算都会发生LQTY发行事件。
+*
+*每笔存款都标有存款的前端地址。
+*
+*所有存款按存款占总存款的比例获得已发行LQTY的份额。LQTY收入
+*由一个给定的存款，是在储户和前端之间的分裂，通过它的存款，基于前端的回扣率。
+*
+*请参阅系统自述以了解概述:
+* https://github.com/liquity/dev/blob/main/README.md lqty-issuance-to-stability-providers
+*
+*我们使用相同的数学乘积和方法来跟踪存款人的LQTY收益，其中“G”是对应于LQTY收益的总和。
+*产品P(和快照P_t)被重复使用，因为比率P/P_t跟踪了由于清算而耗尽的存款。
+*
+*/
 contract StabilityPool is LiquityBase, Ownable, CheckContract, IStabilityPool {
     using LiquitySafeMath128 for uint128;
 
@@ -328,6 +444,11 @@ contract StabilityPool is LiquityBase, Ownable, CheckContract, IStabilityPool {
     * - Sends depositor's accumulated gains (LQTY, ETH) to depositor
     * - Sends the tagged front end's accumulated LQTY gains to the tagged front end
     * - Increases deposit and tagged front end's stake, and takes new snapshots for each.
+    * -触发LQTY发布，基于自上次发布以来经过的时间。LQTY的发行在*所有*储户和前端之间共享
+    * -标签与提供的前端标签参数押金，如果它是一个新的押金
+    * -发送储户的累计收益(LQTY, ETH)到储户
+    * -发送标记前端的累计LQTY收益到标记前端
+    * -增加存款和标记前端的股份，并为每个新的快照。
     */
     function provideToSP(uint _amount, address _frontEndTag) external override {
         _requireFrontEndIsRegisteredOrZero(_frontEndTag);
@@ -376,6 +497,16 @@ contract StabilityPool is LiquityBase, Ownable, CheckContract, IStabilityPool {
     *
     * If _amount > userDeposit, the user withdraws all of their compounded deposit.
     */
+/* withdrawFromSP ():
+*
+* -触发LQTY发布，基于自上次发布以来经过的时间。LQTY的发行在*所有*储户和前端之间共享
+* -删除存款的前端标签，如果它是一个全取款
+* -发送所有储户的累计收益(LQTY, ETH)到储户
+* -发送标记前端的累计LQTY收益到标记前端
+* -减少存款和标记前端的股份，并为每个新的快照。
+*
+* If _amount &gt;userDeposit，用户提取所有的复合存款。
+*/
     function withdrawFromSP(uint _amount) external override {
         if (_amount !=0) {_requireNoUnderCollateralizedTroves();}
         uint initialDeposit = deposits[msg.sender].initialValue;
@@ -394,7 +525,7 @@ contract StabilityPool is LiquityBase, Ownable, CheckContract, IStabilityPool {
         // First pay out any LQTY gains
         address frontEnd = deposits[msg.sender].frontEndTag;
         _payOutLQTYGains(communityIssuanceCached, msg.sender, frontEnd);
-        
+
         // Update front end stake
         uint compoundedFrontEndStake = getCompoundedFrontEndStake(frontEnd);
         uint newFrontEndStake = compoundedFrontEndStake.sub(LUSDtoWithdraw);
@@ -420,6 +551,13 @@ contract StabilityPool is LiquityBase, Ownable, CheckContract, IStabilityPool {
     * - Transfers the depositor's entire ETH gain from the Stability Pool to the caller's trove
     * - Leaves their compounded deposit in the Stability Pool
     * - Updates snapshots for deposit and tagged front end stake */
+/* withdrawETHGainToTrove:
+* -触发LQTY发布，基于自上次发布以来经过的时间。LQTY的发行在*所有*储户和前端之间共享
+* -发送所有储户的LQTY收益到储户
+* -发送所有标记前端的LQTY增益到标记前端
+* -转移储户的整个ETH收益从稳定池到来电者的宝库
+* -在稳定池中留下他们的复合存款
+* -更新快照存放和标记前端股份*/
     function withdrawETHGainToTrove(address _upperHint, address _lowerHint) external override {
         uint initialDeposit = deposits[msg.sender].initialValue;
         _requireUserHasDeposit(initialDeposit);
@@ -486,12 +624,12 @@ contract StabilityPool is LiquityBase, Ownable, CheckContract, IStabilityPool {
     }
 
     function _computeLQTYPerUnitStaked(uint _LQTYIssuance, uint _totalLUSDDeposits) internal returns (uint) {
-        /*  
-        * Calculate the LQTY-per-unit staked.  Division uses a "feedback" error correction, to keep the 
+        /*
+        * Calculate the LQTY-per-unit staked.  Division uses a "feedback" error correction, to keep the
         * cumulative error low in the running total G:
         *
-        * 1) Form a numerator which compensates for the floor division error that occurred the last time this 
-        * function was called.  
+        * 1) Form a numerator which compensates for the floor division error that occurred the last time this
+        * function was called.
         * 2) Calculate "per-unit-staked" ratio.
         * 3) Multiply the ratio back by its denominator, to reveal the current floor division error.
         * 4) Store this error for use in the next correction when this function is called.
@@ -541,8 +679,8 @@ contract StabilityPool is LiquityBase, Ownable, CheckContract, IStabilityPool {
         * Compute the LUSD and ETH rewards. Uses a "feedback" error correction, to keep
         * the cumulative error in the P and S state variables low:
         *
-        * 1) Form numerators which compensate for the floor division errors that occurred the last time this 
-        * function was called.  
+        * 1) Form numerators which compensate for the floor division errors that occurred the last time this
+        * function was called.
         * 2) Calculate "per-unit-staked" ratios.
         * 3) Multiply each ratio back by its denominator, to reveal the current floor division error.
         * 4) Store these errors for use in the next correction when this function is called.
@@ -552,7 +690,7 @@ contract StabilityPool is LiquityBase, Ownable, CheckContract, IStabilityPool {
 
         assert(_debtToOffset <= _totalLUSDDeposits);
         if (_debtToOffset == _totalLUSDDeposits) {
-            LUSDLossPerUnitStaked = DECIMAL_PRECISION;  // When the Pool depletes to 0, so does each deposit 
+            LUSDLossPerUnitStaked = DECIMAL_PRECISION;  // When the Pool depletes to 0, so does each deposit
             lastLUSDLossError_Offset = 0;
         } else {
             uint LUSDLossNumerator = _debtToOffset.mul(DECIMAL_PRECISION).sub(lastLUSDLossError_Offset);
@@ -608,7 +746,7 @@ contract StabilityPool is LiquityBase, Ownable, CheckContract, IStabilityPool {
 
         // If multiplying P by a non-zero product factor would reduce P below the scale boundary, increment the scale
         } else if (currentP.mul(newProductFactor).div(DECIMAL_PRECISION) < SCALE_FACTOR) {
-            newP = currentP.mul(newProductFactor).mul(SCALE_FACTOR).div(DECIMAL_PRECISION); 
+            newP = currentP.mul(newProductFactor).mul(SCALE_FACTOR).div(DECIMAL_PRECISION);
             currentScale = currentScaleCached.add(1);
             emit ScaleUpdated(currentScale);
         } else {

@@ -100,15 +100,19 @@ contract TroveManager is LiquityBase, Ownable, CheckContract, ITroveManager {
     uint public L_LUSDDebt;
 
     // Map addresses with active troves to their RewardSnapshot
+    //映射地址与活跃的宝库到他们的RewardSnapshot
     mapping (address => RewardSnapshot) public rewardSnapshots;
 
     // Object containing the ETH and LUSD snapshots for a given active trove
+    //包含ETH和LUSD快照的对象
     struct RewardSnapshot { uint ETH; uint LUSDDebt;}
 
     // Array of all active trove addresses - used to to compute an approximate hint off-chain, for the sorted list insertion
+    //所有活动宝库地址的数组——用于计算一个近似的链下提示，用于排序列表的插入
     address[] public TroveOwners;
 
     // Error trackers for the trove redistribution calculation
+    //所有活动宝库地址的数组——用于计算一个近似的链下提示，用于排序列表的插入
     uint public lastETHError_Redistribution;
     uint public lastLUSDDebtError_Redistribution;
 
@@ -117,8 +121,14 @@ contract TroveManager is LiquityBase, Ownable, CheckContract, ITroveManager {
     *
     * These structs are used to hold, return and assign variables inside the liquidation functions,
     * in order to avoid the error: "CompilerError: Stack too deep".
-    **/
 
+    **/
+    /*
+    *——清算的变量容器结构——
+     ＊
+     *这些结构体用于保存，返回和分配清算函数内部的变量，
+     编译错误:"CompilerError: Stack too deep"。
+    */
     struct LocalVariables_OuterLiquidationFunction {
         uint price;
         uint LUSDInStabPool;
@@ -300,6 +310,7 @@ contract TroveManager is LiquityBase, Ownable, CheckContract, ITroveManager {
     // --- Trove Liquidation functions ---
 
     // Single liquidation function. Closes the trove if its ICR is lower than the minimum collateral ratio.
+    //单个清理函数。如果其ICR低于最低抵押比率，则关闭资产。
     function liquidate(address _borrower) external override {
         _requireTroveIsActive(_borrower);
 
@@ -373,7 +384,7 @@ contract TroveManager is LiquityBase, Ownable, CheckContract, ITroveManager {
         if (_ICR <= _100pct) {
             _movePendingTroveRewardsToActivePool(_activePool, _defaultPool, vars.pendingDebtReward, vars.pendingCollReward);
             _removeStake(_borrower);
-           
+
             singleLiquidation.debtToOffset = 0;
             singleLiquidation.collToSendToSP = 0;
             singleLiquidation.debtToRedistribute = singleLiquidation.entireTroveDebt;
@@ -382,7 +393,7 @@ contract TroveManager is LiquityBase, Ownable, CheckContract, ITroveManager {
             _closeTrove(_borrower, Status.closedByLiquidation);
             emit TroveLiquidated(_borrower, singleLiquidation.entireTroveDebt, singleLiquidation.entireTroveColl, TroveManagerOperation.liquidateInRecoveryMode);
             emit TroveUpdated(_borrower, 0, 0, 0, TroveManagerOperation.liquidateInRecoveryMode);
-            
+
         // If 100% < ICR < MCR, offset as much as possible, and redistribute the remainder
         } else if ((_ICR > _100pct) && (_ICR < MCR)) {
              _movePendingTroveRewardsToActivePool(_activePool, _defaultPool, vars.pendingDebtReward, vars.pendingCollReward);
@@ -491,6 +502,8 @@ contract TroveManager is LiquityBase, Ownable, CheckContract, ITroveManager {
     /*
     * Liquidate a sequence of troves. Closes a maximum number of n under-collateralized Troves,
     * starting from the one with the lowest collateral ratio in the system, and moving upwards
+    *清算一系列宝藏。 关闭n个未担保的宝藏的最大数量，
+    *从系统中抵押比率最低的那一个开始，并向上移动
     */
     function liquidateTroves(uint _n) external override {
         ContractsCache memory contractsCache = ContractsCache(
@@ -635,7 +648,9 @@ contract TroveManager is LiquityBase, Ownable, CheckContract, ITroveManager {
     }
 
     /*
+    分批处理清算金库
     * Attempt to liquidate a custom list of troves provided by the caller.
+    *尝试清算由来电者提供的自定义宝库列表。
     */
     function batchLiquidateTroves(address[] memory _troveArray) public override {
         require(_troveArray.length != 0, "TroveManager: Calldata address array must not be empty");
@@ -652,6 +667,7 @@ contract TroveManager is LiquityBase, Ownable, CheckContract, ITroveManager {
         vars.recoveryModeAtStart = _checkRecoveryMode(vars.price);
 
         // Perform the appropriate liquidation sequence - tally values and obtain their totals.
+        // 执行适当的清算序列-计数值并获得它们的总数。
         if (vars.recoveryModeAtStart) {
             totals = _getTotalFromBatchLiquidate_RecoveryMode(activePoolCached, defaultPoolCached, vars.price, vars.LUSDInStabPool, _troveArray);
         } else {  //  if !vars.recoveryModeAtStart
@@ -661,6 +677,7 @@ contract TroveManager is LiquityBase, Ownable, CheckContract, ITroveManager {
         require(totals.totalDebtInSequence > 0, "TroveManager: nothing to liquidate");
 
         // Move liquidated ETH and LUSD to the appropriate pools
+        //将清算后的ETH和LUSD移至适当的池中
         stabilityPoolCached.offset(totals.totalDebtToOffset, totals.totalCollToSendToSP);
         _redistributeDebtAndColl(activePoolCached, defaultPoolCached, totals.totalDebtToRedistribute, totals.totalCollToRedistribute);
         if (totals.totalCollSurplus > 0) {
@@ -675,12 +692,15 @@ contract TroveManager is LiquityBase, Ownable, CheckContract, ITroveManager {
         emit Liquidation(vars.liquidatedDebt, vars.liquidatedColl, totals.totalCollGasCompensation, totals.totalLUSDGasCompensation);
 
         // Send gas compensation to caller
+        //发送气体补偿给调用者
         _sendGasCompensation(activePoolCached, msg.sender, totals.totalLUSDGasCompensation, totals.totalCollGasCompensation);
     }
 
     /*
     * This function is used when the batch liquidation sequence starts during Recovery Mode. However, it
     * handle the case where the system *leaves* Recovery Mode, part way through the liquidation sequence
+    在“恢复模式”中启动批量清理顺序时，使用此功能。 然而,它
+ *处理的情况下，系统*离开*恢复模式，部分方式通过清算序列
     */
     function _getTotalFromBatchLiquidate_RecoveryMode
     (
@@ -710,6 +730,7 @@ contract TroveManager is LiquityBase, Ownable, CheckContract, ITroveManager {
             if (!vars.backToNormalMode) {
 
                 // Skip this trove if ICR is greater than MCR and Stability Pool is empty
+                //如果ICR大于MCR且Stability Pool为空，则跳过此存储库
                 if (vars.ICR >= MCR && vars.remainingLUSDInStabPool == 0) { continue; }
 
                 uint TCR = LiquityMath._computeCR(vars.entireSystemColl, vars.entireSystemDebt, _price);
@@ -717,11 +738,13 @@ contract TroveManager is LiquityBase, Ownable, CheckContract, ITroveManager {
                 singleLiquidation = _liquidateRecoveryMode(_activePool, _defaultPool, vars.user, vars.ICR, vars.remainingLUSDInStabPool, TCR, _price);
 
                 // Update aggregate trackers
+                //更新聚合跟踪器
                 vars.remainingLUSDInStabPool = vars.remainingLUSDInStabPool.sub(singleLiquidation.debtToOffset);
                 vars.entireSystemDebt = vars.entireSystemDebt.sub(singleLiquidation.debtToOffset);
                 vars.entireSystemColl = vars.entireSystemColl.sub(singleLiquidation.collToSendToSP);
 
                 // Add liquidation values to their respective running totals
+                //将清算值加到各自的总计中
                 totals = _addLiquidationValuesToTotals(totals, singleLiquidation);
 
                 vars.backToNormalMode = !_checkPotentialRecoveryMode(vars.entireSystemColl, vars.entireSystemDebt, _price);
@@ -732,6 +755,7 @@ contract TroveManager is LiquityBase, Ownable, CheckContract, ITroveManager {
                 vars.remainingLUSDInStabPool = vars.remainingLUSDInStabPool.sub(singleLiquidation.debtToOffset);
 
                 // Add liquidation values to their respective running totals
+                 //将清算值加到各自的总计中
                 totals = _addLiquidationValuesToTotals(totals, singleLiquidation);
 
             } else continue; // In Normal Mode skip troves with ICR >= MCR
@@ -840,7 +864,7 @@ contract TroveManager is LiquityBase, Ownable, CheckContract, ITroveManager {
 
             /*
             * If the provided hint is out of date, we bail since trying to reinsert without a good hint will almost
-            * certainly result in running out of gas. 
+            * certainly result in running out of gas.
             *
             * If the resultant net debt of the partial is less than the minimum, net debt we bail.
             */
@@ -1102,7 +1126,7 @@ contract TroveManager is LiquityBase, Ownable, CheckContract, ITroveManager {
 
         return pendingETHReward;
     }
-    
+
     // Get the borrower's pending accumulated LUSD reward, earned by their stake
     function getPendingLUSDDebtReward(address _borrower) public view override returns (uint) {
         uint snapshotLUSDDebt = rewardSnapshots[_borrower].LUSDDebt;
@@ -1124,7 +1148,7 @@ contract TroveManager is LiquityBase, Ownable, CheckContract, ITroveManager {
         * pending rewards
         */
         if (Troves[_borrower].status != Status.active) {return false;}
-       
+
         return (rewardSnapshots[_borrower].ETH < L_ETH);
     }
 
@@ -1364,7 +1388,7 @@ contract TroveManager is LiquityBase, Ownable, CheckContract, ITroveManager {
         // Update the baseRate state variable
         baseRate = newBaseRate;
         emit BaseRateUpdated(newBaseRate);
-        
+
         _updateLastFeeOpTime();
 
         return newBaseRate;
