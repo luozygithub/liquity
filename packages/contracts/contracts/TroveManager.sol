@@ -896,6 +896,11 @@ contract TroveManager is LiquityBase, Ownable, CheckContract, ITroveManager {
     * In order to close the trove, the LUSD liquidation reserve is burned, and the corresponding debt is removed from the active pool.
     * The debt recorded on the trove's struct is zero'd elswhere, in _closeTrove.
     * Any surplus ETH left in the trove, is sent to the Coll surplus pool, and can be later claimed by the borrower.
+    *当完全赎回发生时调用，并关闭宝库。
+*赎回者将(债务-清算准备金)LUSD置换为(债务-清算准备金)价值的ETH，因此剩余的LUSD清算准备金对应剩余的债务。
+*为了关闭宝库，LUSD清算储备被烧毁，相应的债务被从活动池中移除。
+*债务记录在宝库的结构是零的其他地方，在_closeTrove。
+*遗存中剩余的ETH将被送到Coll剩余池中，借款方可以在以后取回。
     */
     function _redeemCloseTrove(ContractsCache memory _contractsCache, address _borrower, uint _LUSD, uint _ETH) internal {
         _contractsCache.lusdToken.burn(gasPoolAddress, _LUSD);
